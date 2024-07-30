@@ -12,11 +12,17 @@ use log::*;
 #[macro_use]
 mod console;
 mod backtracer;
+#[cfg(feature = "batch")]
+mod batch;
 mod logging;
 mod panic;
 mod sbi;
+mod sync;
+mod syscall;
+mod trap;
 
 global_asm!(include_str!("entry.asm"));
+global_asm!(include_str!("link_app.S"));
 
 /// clear BSS segment
 pub fn clear_bss() {
@@ -47,8 +53,7 @@ pub fn rust_main() -> ! {
     clear_bss();
     logging::init();
     kprintln!("[kernel] Hello, world!");
-    backtracer::test();
-    backtracer::backtrace();
+
     trace!(
         "[kernel] .text [{:#x}, {:#x})",
         stext as usize,
@@ -68,5 +73,14 @@ pub fn rust_main() -> ! {
     );
     error!("[kernel] .bss [{:#x}, {:#x})", sbss as usize, ebss as usize);
 
+    trap::init();
+
+    #[cfg(feature = "batch")]
+    {
+        info!("[kernel] Using batch kernel");
+        batch::init();
+        batch::run_next_app();
+    }
+    #[cfg(not(feature = "batch"))]
     sbi::shutdown(false)
 }

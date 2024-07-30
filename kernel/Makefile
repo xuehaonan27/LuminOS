@@ -34,13 +34,19 @@ env:
 	rustup component add rust-src
 	rustup component add llvm-tools-preview
 
-$(KERNEL_BIN): kernel
+$(KERNEL_BIN):
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
 kernel:
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
 	@cargo build $(MODE_ARG)
+	@rm src/linker.ld
+
+batch-kernel:
+	@echo Platform: $(BOARD)
+	@cp src/linker-$(BOARD).ld src/linker.ld
+	@cargo build $(MODE_ARG) --features "batch"
 	@rm src/linker.ld
 
 clean:
@@ -80,4 +86,4 @@ gdbserver: qemu-version-check build
 gdbclient:
 	@riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'
 
-.PHONY: build env kernel clean disasm disasm-vim run-inner gdbserver gdbclient qemu-version-check
+.PHONY: build env kernel batch-kernel clean disasm disasm-vim run-inner gdbserver gdbclient qemu-version-check

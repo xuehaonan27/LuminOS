@@ -5,8 +5,13 @@ authors = ["Haonan Xue <xuehaonan27@gmail.com>"]
 edition = "2021"
 
 [dependencies]
+riscv = "0.11.1"
 log = "0.4.22"
 sbi-rt = { version = "0.0.3", features = ["legacy"] }
+lazy_static = { version = "1.5.0", features = ["spin_no_std"] }
 
 [profile.release]
 debug = true
+
+[features]
+batch = []

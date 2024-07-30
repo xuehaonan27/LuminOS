@@ -5,7 +5,7 @@ use core::panic::PanicInfo;
 use log::*;
 
 #[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
+pub fn panic(info: &PanicInfo) -> ! {
     if let Some(location) = info.location() {
         error!(
             "[kernel] Panicked at {}:{} {}",

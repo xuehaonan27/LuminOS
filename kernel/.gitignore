@@ -1,0 +1,6 @@
+Cargo.lock
+target/
+.DS_Store
+build
+build.rs
+link_app.S

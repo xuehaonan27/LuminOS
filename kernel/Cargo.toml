@@ -1,0 +1,12 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+authors = ["Haonan Xue <xuehaonan27@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+log = "0.4.22"
+sbi-rt = { version = "0.0.3", features = ["legacy"] }
+
+[profile.release]
+debug = true

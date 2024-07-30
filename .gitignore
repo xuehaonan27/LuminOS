@@ -1,0 +1,6 @@
+!.vscode/settings.json
+
+kernel/Cargo.lock
+kernel/target
+
+.DS_Store

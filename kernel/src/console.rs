@@ -20,7 +20,7 @@ pub fn print(args: fmt::Arguments) {
 /// Kernel print macro
 #[macro_export]
 macro_rules! kprint {
-    ($fmt: literal $(, $($arg: tt)+)?) => {
+    ($fmt: expr $(, $($arg: tt)+)?) => {
         $crate::console::print(format_args!($fmt $(, $($arg)+)?));
     };
 }
@@ -28,7 +28,7 @@ macro_rules! kprint {
 /// Kernel println macro
 #[macro_export]
 macro_rules! kprintln {
-    ($fmt: literal $(, $($arg: tt)+)?) => {
+    ($fmt: expr $(, $($arg: tt)+)?) => {
         $crate::console::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?))
     };
 }

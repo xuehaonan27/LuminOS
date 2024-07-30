@@ -11,6 +11,7 @@ use log::*;
 
 #[macro_use]
 mod console;
+mod backtracer;
 mod logging;
 mod panic;
 mod sbi;
@@ -46,6 +47,8 @@ pub fn rust_main() -> ! {
     clear_bss();
     logging::init();
     kprintln!("[kernel] Hello, world!");
+    backtracer::test();
+    backtracer::backtrace();
     trace!(
         "[kernel] .text [{:#x}, {:#x})",
         stext as usize,

@@ -10,6 +10,9 @@ pub struct TrapContext {
 
     /// S Mode sepc register
     pub sepc: usize,
+
+    /// Float point registers
+    pub f: [u64; 32],
 }
 
 #[allow(unused)]
@@ -27,6 +30,7 @@ impl TrapContext {
             x: [0; 32],
             sstatus,
             sepc: entry,
+            f: [0; 32],
         };
         cx.set_sp(sp);
         cx

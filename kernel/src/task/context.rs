@@ -7,6 +7,8 @@ pub struct TaskContext {
     sp: usize,
     /// callee saved registers:  s 0..11
     s: [usize; 12],
+    /// callee saved fload registers: f 0..11
+    fs: [u64; 12],
 }
 
 impl TaskContext {
@@ -16,6 +18,7 @@ impl TaskContext {
             ra: 0,
             sp: 0,
             s: [0; 12],
+            fs: [0; 12],
         }
     }
 
@@ -28,6 +31,7 @@ impl TaskContext {
             ra: __restore as usize,
             sp: kstack_ptr,
             s: [0; 12],
+            fs: [0; 12],
         }
     }
 }

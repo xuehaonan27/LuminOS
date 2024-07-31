@@ -1,50 +1,20 @@
 use core::arch::global_asm;
 
 use riscv::register::{
-    scause::{self, Exception, Trap},
-    sstatus, stval,
+    scause::{self, Exception, Interrupt, Trap},
+    sie, stval,
     stvec::{self, TrapMode},
 };
 
-use crate::syscall::syscall;
 #[cfg(feature = "multiprogramming")]
 use crate::task::exit_current_and_run_next;
+use crate::{syscall::syscall, task::suspend_current_and_run_next, timer::set_next_trigger};
 
 #[cfg(feature = "batch")]
 use crate::batch::run_next_app;
 
-#[repr(C)]
-pub struct TrapContext {
-    /// General purpose registers
-    pub x: [usize; 32],
-
-    /// S Mode sstatus register
-    pub sstatus: usize,
-
-    /// S Mode sepc register
-    pub sepc: usize,
-}
-
-#[allow(unused)]
-impl TrapContext {
-    pub fn set_sp(&mut self, sp: usize) {
-        self.x[2] = sp;
-    }
-
-    pub fn init_context(entry: usize, sp: usize) -> Self {
-        let sstatus = sstatus::read();
-        let mut sstatus: usize = unsafe { core::mem::transmute(sstatus) };
-        // set SPP to user mode
-        sstatus &= !(1 << 8);
-        let mut cx = Self {
-            x: [0; 32],
-            sstatus,
-            sepc: entry,
-        };
-        cx.set_sp(sp);
-        cx
-    }
-}
+mod context;
+pub use context::TrapContext;
 
 global_asm!(include_str!("trap.S"));
 
@@ -82,6 +52,11 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             #[cfg(feature = "multiprogramming")]
             exit_current_and_run_next();
         }
+        Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            set_next_trigger();
+            // Schedule next task to run
+            suspend_current_and_run_next();
+        }
         _ => {
             panic!(
                 "Unsupported trap {:?}, stval = {:#x}",
@@ -91,4 +66,10 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
         }
     }
     cx
+}
+
+/// Enable timer interrupt.
+/// Should be called during kernel initialization. 
+pub fn enable_timer_interrupt() {
+    unsafe { sie::set_stimer() }
 }

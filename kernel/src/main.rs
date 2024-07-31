@@ -12,21 +12,23 @@ use log::*;
 mod backtracer;
 #[cfg(feature = "batch")]
 mod batch;
-#[cfg(feature = "multiprogramming")]
+#[cfg(any(feature = "multiprogramming", feature = "multitasking"))]
 mod config;
 #[macro_use]
 mod console;
 #[macro_use]
 mod debug;
-#[cfg(feature = "multiprogramming")]
+#[cfg(any(feature = "multiprogramming", feature = "multitasking"))]
 mod loader;
 mod logging;
 mod panic;
 mod sbi;
 mod sync;
 mod syscall;
-#[cfg(feature = "multiprogramming")]
+#[cfg(any(feature = "multiprogramming", feature = "multitasking"))]
 mod task;
+#[cfg(feature = "multitasking")]
+mod timer;
 mod trap;
 
 global_asm!(include_str!("entry.asm"));
@@ -96,6 +98,18 @@ pub fn rust_main() -> ! {
         task::run_first_task();
         panic!("Unreachable in rust_main!");
     }
-    #[cfg(not(any(feature = "batch", feature = "multiprogramming")))]
+    #[cfg(feature = "multitasking")]
+    {
+        loader::load_apps();
+        trap::enable_timer_interrupt();
+        timer::set_next_trigger();
+        task::run_first_task();
+        panic!("Unreacahble in rust_main!");
+    }
+    #[cfg(not(any(
+        feature = "batch",
+        feature = "multiprogramming",
+        feature = "multitasking"
+    )))]
     sbi::shutdown(false)
 }

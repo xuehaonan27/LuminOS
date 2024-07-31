@@ -17,6 +17,8 @@ use crate::config::MAX_APP_NUM;
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sbi::shutdown;
 use crate::sync::UPSafeCell;
+#[cfg(feature = "profiling")]
+use crate::timer::get_time_us;
 use lazy_static::*;
 use switch::__switch;
 use task::{TaskControlBlock, TaskStatus};
@@ -45,6 +47,18 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
+    /// calculate kernel space time for a task
+    #[cfg(feature = "profiling")]
+    stop_watch: usize,
+}
+
+impl TaskManagerInner {
+    #[cfg(feature = "profiling")]
+    fn refresh_stop_watch(&mut self) -> usize {
+        let start_time = self.stop_watch;
+        self.stop_watch = get_time_us();
+        self.stop_watch - start_time
+    }
 }
 
 lazy_static! {
@@ -54,6 +68,10 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            #[cfg(feature = "profiling")]
+            user_time: 0,
+            #[cfg(feature = "profiling")]
+            kernel_time: 0,
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -65,6 +83,8 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    #[cfg(feature = "profiling")]
+                    stop_watch: 0,
                 })
             },
         }
@@ -81,6 +101,9 @@ impl TaskManager {
         let task0 = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
+        // start recording
+        #[cfg(feature = "profiling")]
+        inner.refresh_stop_watch();
         drop(inner);
         let mut _unused = TaskContext::zero_init();
         // before this, we should drop local variables that must be dropped manually
@@ -101,6 +124,8 @@ impl TaskManager {
     fn mark_current_exited(&self) {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
+        #[cfg(feature = "profiling")]
+        kprintln!("[kernel] task {} exited. user_time: {} us, kernel_time: {} us.", current, inner.tasks[current].user_time, inner.tasks[current].kernel_time);
         inner.tasks[current].task_status = TaskStatus::Exited;
     }
 
@@ -125,9 +150,13 @@ impl TaskManager {
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
+            // add kernel time for task A
+            // refresh stop watch for recording kernel time of task B
+            #[cfg(feature = "profiling")]
+            (inner.tasks[current].kernel_time += inner.refresh_stop_watch());
             drop(inner);
             // before this, we should drop local variables that must be dropped manually
-            debug_println!("before switch");
+            // debug_println!("before switch");
             unsafe {
                 __switch(current_task_cx_ptr, next_task_cx_ptr);
             }
@@ -136,6 +165,22 @@ impl TaskManager {
             kprintln!("All applications completed!");
             shutdown(false);
         }
+    }
+    #[cfg(feature = "profiling")]
+    fn user_time_start(&self) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        // add kernel time for task B
+        // refresh stop watch for recording user time of task B
+        inner.tasks[current].kernel_time += inner.refresh_stop_watch();
+    }
+    #[cfg(feature = "profiling")]
+    fn user_time_end(&self) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        // add user time for task A
+        // refresh stop watch for recording kernel time of task A
+        inner.tasks[current].user_time += inner.refresh_stop_watch();
     }
 }
 
@@ -169,4 +214,17 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+
+/// Calcualte kernel time before running in user space
+#[cfg(feature = "profiling")]
+pub fn user_time_start() {
+    TASK_MANAGER.user_time_start()
+}
+
+/// Calculate user time before running in kernel space
+#[cfg(feature = "profiling")]
+pub fn user_time_end() {
+    TASK_MANAGER.user_time_end()
 }

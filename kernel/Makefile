@@ -54,14 +54,14 @@ multipg-kernel:
 	@cd ../user && make multipg-build
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo build $(MODE_ARG) --features "multiprogramming debug"
+	@cargo build $(MODE_ARG) --features "multiprogramming debug profiling"
 	@rm src/linker.ld
 
 multitsk-kernel:
 	@cd ../user && make multipg-build
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo build $(MODE_ARG) --features "multitasking debug"
+	@cargo build $(MODE_ARG) --features "multitasking debug profiling"
 	@rm src/linker.ld
 
 clean:

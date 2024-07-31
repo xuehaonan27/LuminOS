@@ -29,6 +29,8 @@ pub fn init() {
 
 #[no_mangle]
 pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
+    #[cfg(feature = "profiling")]
+    crate::task::user_time_end();
     let scause = scause::read();
     let stval = stval::read();
     match scause.cause() {
@@ -65,6 +67,8 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             );
         }
     }
+    #[cfg(feature = "profiling")]
+    crate::task::user_time_start();
     cx
 }
 

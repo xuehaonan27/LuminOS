@@ -2,7 +2,7 @@
 #![feature(linkage)] // manage linker behavior
 #![feature(panic_info_message)]
 
-use syscall::{sys_exit, sys_write};
+use syscall::*;
 
 mod syscall;
 #[macro_use]
@@ -40,4 +40,8 @@ pub fn write(fd: usize, buf: &[u8]) -> isize {
 
 pub fn exit(exit_code: i32) -> isize {
     sys_exit(exit_code)
+}
+
+pub fn yield_() -> isize {
+    sys_yield()
 }

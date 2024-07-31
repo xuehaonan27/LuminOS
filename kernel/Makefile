@@ -44,9 +44,17 @@ kernel:
 	@rm src/linker.ld
 
 batch-kernel:
+	@cd ../user && make batch-build
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo build $(MODE_ARG) --features "batch"
+	@cargo build $(MODE_ARG) --features "batch debug"
+	@rm src/linker.ld
+
+multipg-kernel:
+	@cd ../user && make multipg-build
+	@echo Platform: $(BOARD)
+	@cp src/linker-$(BOARD).ld src/linker.ld
+	@cargo build $(MODE_ARG) --features "multiprogramming debug"
 	@rm src/linker.ld
 
 clean:

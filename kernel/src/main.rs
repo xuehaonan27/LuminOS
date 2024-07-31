@@ -9,16 +9,24 @@
 use core::arch::global_asm;
 use log::*;
 
-#[macro_use]
-mod console;
 mod backtracer;
 #[cfg(feature = "batch")]
 mod batch;
+#[cfg(feature = "multiprogramming")]
+mod config;
+#[macro_use]
+mod console;
+#[macro_use]
+mod debug;
+#[cfg(feature = "multiprogramming")]
+mod loader;
 mod logging;
 mod panic;
 mod sbi;
 mod sync;
 mod syscall;
+#[cfg(feature = "multiprogramming")]
+mod task;
 mod trap;
 
 global_asm!(include_str!("entry.asm"));
@@ -77,10 +85,17 @@ pub fn rust_main() -> ! {
 
     #[cfg(feature = "batch")]
     {
-        info!("[kernel] Using batch kernel");
+        kprintln!("[kernel] Using batch kernel");
         batch::init();
         batch::run_next_app();
     }
-    #[cfg(not(feature = "batch"))]
+    #[cfg(feature = "multiprogramming")]
+    {
+        kprintln!("[kernel] Using multiprogramming kernel");
+        loader::load_apps();
+        task::run_first_task();
+        panic!("Unreachable in rust_main!");
+    }
+    #[cfg(not(any(feature = "batch", feature = "multiprogramming")))]
     sbi::shutdown(false)
 }

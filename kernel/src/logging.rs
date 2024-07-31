@@ -1,5 +1,7 @@
 use log::*;
 
+use crate::kprintln;
+
 struct LuminOSLogger;
 
 impl Log for LuminOSLogger {

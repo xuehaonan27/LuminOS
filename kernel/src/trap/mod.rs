@@ -7,6 +7,8 @@ use riscv::register::{
 };
 
 use crate::syscall::syscall;
+#[cfg(feature = "multiprogramming")]
+use crate::task::exit_current_and_run_next;
 
 #[cfg(feature = "batch")]
 use crate::batch::run_next_app;
@@ -69,12 +71,16 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
 
             #[cfg(feature = "batch")]
             run_next_app();
+            #[cfg(feature = "multiprogramming")]
+            exit_current_and_run_next();
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             kprintln!("[kernel] IllegalInstruction in application");
 
             #[cfg(feature = "batch")]
             run_next_app();
+            #[cfg(feature = "multiprogramming")]
+            exit_current_and_run_next();
         }
         _ => {
             panic!(

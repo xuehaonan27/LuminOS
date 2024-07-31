@@ -14,4 +14,7 @@ lazy_static = { version = "1.5.0", features = ["spin_no_std"] }
 debug = true
 
 [features]
+default = ["multiprogramming"]
+debug = []
 batch = []
+multiprogramming = []

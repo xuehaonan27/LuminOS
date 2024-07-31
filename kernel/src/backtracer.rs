@@ -1,7 +1,7 @@
 #![allow(unused)]
 use core::arch::asm;
 
-// use arrayvec::ArrayVec;
+use crate::kprintln;
 
 macro_rules! impl_riscv_xregs {
     ($($x:ident),+) => {

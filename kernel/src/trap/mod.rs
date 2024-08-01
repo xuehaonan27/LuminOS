@@ -16,6 +16,9 @@ use crate::batch::run_next_app;
 mod context;
 pub use context::TrapContext;
 
+#[cfg(feature = "D_EXTENSION_ENABLED")]
+global_asm!(include_str!("trap_d_ext.S"));
+#[cfg(not(feature = "D_EXTENSION_ENABLED"))]
 global_asm!(include_str!("trap.S"));
 
 pub fn init() {

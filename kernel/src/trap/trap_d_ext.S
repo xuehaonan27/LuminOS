@@ -11,6 +11,13 @@
     ld x\n, \n*REGISTER_SIZE(sp)
 .endm
 
+.macro SAVE_FP n
+    fsd f\n, (34*REGISTER_SIZE+\n*F_REGISTER_SIZE)(sp)
+.endm
+.macro LOAD_FP n
+    fld f\n, (34*REGISTER_SIZE+\n*F_REGISTER_SIZE)(sp)
+.endm
+
     .section .text
     .globl __alltraps
     .globl __restore
@@ -20,6 +27,7 @@ __alltraps:
     # now sp->kernel stack, sscratch->user stack
     # allocate a TrapContext on kernel stack
     addi sp, sp, -34*REGISTER_SIZE # general purpose registers and 2 csr registers
+    addi sp, sp, -32*F_REGISTER_SIZE # support float point registers
     # save general-purpose registers
     sd x1, 1*REGISTER_SIZE(sp)
     # skip sp(x2), we will save it later
@@ -29,6 +37,12 @@ __alltraps:
     .set n, 5
     .rept 27
         SAVE_GP %n
+        .set n, n+1
+    .endr
+    # save f0~f31
+    .set n, 0
+    .rept 32
+        SAVE_FP %n
         .set n, n+1
     .endr
     # we can use t0/t1/t2 freely, because they were saved on kernel stack
@@ -60,7 +74,14 @@ __restore:
         LOAD_GP %n
         .set n, n+1
     .endr
+    # restore fload point registers
+    .set n, 0
+    .rept 32
+        LOAD_FP %n
+        .set n, n+1
+    .endr
     # release TrapContext on kernel stack
+    addi sp, sp, 32*F_REGISTER_SIZE # support float point registers
     addi sp, sp, 34*REGISTER_SIZE
     # now sp->kernel stack, sscratch->user stack
     csrrw sp, sscratch, sp

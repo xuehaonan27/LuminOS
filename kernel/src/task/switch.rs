@@ -1,5 +1,8 @@
 use core::arch::global_asm;
 
+#[cfg(feature = "D_EXTENSION_ENABLED")]
+global_asm!(include_str!("switch_d_ext.S"));
+#[cfg(not(feature = "D_EXTENSION_ENABLED"))]
 global_asm!(include_str!("switch.S"));
 
 use super::TaskContext;

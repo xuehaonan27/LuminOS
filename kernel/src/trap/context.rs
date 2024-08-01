@@ -12,6 +12,7 @@ pub struct TrapContext {
     pub sepc: usize,
 
     /// Float point registers
+    #[cfg(feature = "D_EXTENSION_ENABLED")]
     pub f: [u64; 32],
 }
 
@@ -30,6 +31,7 @@ impl TrapContext {
             x: [0; 32],
             sstatus,
             sepc: entry,
+            #[cfg(feature = "D_EXTENSION_ENABLED")]
             f: [0; 32],
         };
         cx.set_sp(sp);

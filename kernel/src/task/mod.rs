@@ -20,6 +20,7 @@ use crate::sync::UPSafeCell;
 #[cfg(feature = "profiling")]
 use crate::timer::get_time_us;
 use lazy_static::*;
+#[cfg(not(feature = "profiling"))]
 use switch::__switch;
 use task::{TaskControlBlock, TaskStatus};
 
@@ -163,6 +164,8 @@ impl TaskManager {
             // go back to user mode
         } else {
             kprintln!("All applications completed!");
+            #[cfg(feature = "profiling")]
+            kprintln!("task switch time: {} us", get_switch_time_count());
             shutdown(false);
         }
     }
@@ -227,4 +230,28 @@ pub fn user_time_start() {
 #[cfg(feature = "profiling")]
 pub fn user_time_end() {
     TASK_MANAGER.user_time_end()
+}
+
+#[cfg(feature = "profiling")]
+static mut SWITCH_TIME_START: usize = 0; // FIXME: per HART
+#[cfg(feature = "profiling")]
+static mut SWITCH_TIME_COUNT: usize = 0; // FIXME: per HART
+#[cfg(feature = "profiling")]
+static mut SWTICH_CNT: usize = 0; // FIXME: per HART
+#[cfg(feature = "profiling")]
+unsafe fn __switch(
+    current_task_cx_ptr: *mut TaskContext, // a0
+    next_task_cx_ptr: *const TaskContext,  // a1
+) {
+    SWTICH_CNT += 1;
+    SWITCH_TIME_START = get_time_us();
+    switch::__switch(current_task_cx_ptr, next_task_cx_ptr);
+    let this_switch = get_time_us() - SWITCH_TIME_START;
+    kprintln!("[kernel] switch {}: {} us", SWTICH_CNT, this_switch);
+    SWITCH_TIME_COUNT += this_switch;
+}
+
+#[cfg(feature = "profiling")]
+fn get_switch_time_count() -> usize {
+    unsafe { SWITCH_TIME_COUNT }
 }

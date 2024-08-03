@@ -2,7 +2,7 @@ use core::arch::global_asm;
 
 use riscv::register::{
     scause::{self, Exception, Interrupt, Trap},
-    sie, stval,
+    sie, sstatus, stval,
     stvec::{self, TrapMode},
 };
 
@@ -32,6 +32,14 @@ pub fn init() {
 
 #[no_mangle]
 pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
+    match sstatus::read().spp() {
+        sstatus::SPP::Supervisor => kernel_trap_handler(cx),
+        sstatus::SPP::User => user_trap_handler(cx),
+    }
+}
+
+#[no_mangle]
+pub fn user_trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
     #[cfg(feature = "profiling")]
     crate::task::user_time_end();
     let scause = scause::read();
@@ -75,8 +83,38 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
     cx
 }
 
+#[no_mangle]
+pub fn kernel_trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
+    let scause = scause::read();
+    let stval = stval::read();
+    match scause.cause() {
+        Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            kprintln!("kernel interrupt: from timer");
+            mark_kernel_interrupt();
+            set_next_trigger();
+        }
+        Trap::Exception(Exception::StoreFault) | Trap::Exception(Exception::StorePageFault) => {
+            panic!("[kernel] PageFault in kernel, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.", stval, cx.sepc);
+        }
+        _ => {
+            panic!("unknown kernel exception or interrupt");
+        }
+    }
+    cx
+}
+
 /// Enable timer interrupt.
-/// Should be called during kernel initialization. 
+/// Should be called during kernel initialization.
 pub fn enable_timer_interrupt() {
     unsafe { sie::set_stimer() }
+}
+
+static mut KERNEL_INTERRUPT_TRIGGERED: bool = false; // FIXME: per HART
+
+pub fn check_kernel_interrupt() -> bool {
+    unsafe { core::ptr::addr_of_mut!(KERNEL_INTERRUPT_TRIGGERED).read_volatile() }
+}
+
+pub fn mark_kernel_interrupt() {
+    unsafe { core::ptr::addr_of_mut!(KERNEL_INTERRUPT_TRIGGERED).write_volatile(true) }
 }

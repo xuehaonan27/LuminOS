@@ -103,6 +103,19 @@ pub fn rust_main() -> ! {
         loader::load_apps();
         trap::enable_timer_interrupt();
         timer::set_next_trigger();
+
+        {
+            use riscv::register::sstatus;
+            unsafe { sstatus::set_sie() }; // enable kernel mode interrupt
+            loop { // sanity check
+                if trap::check_kernel_interrupt() {
+                    kprintln!("kernel interrupt returned.");
+                    break;
+                }
+            }
+            unsafe {sstatus::clear_sie()}; // disable kernel mode interrupt
+        }
+
         task::run_first_task();
         panic!("Unreacahble in rust_main!");
     }

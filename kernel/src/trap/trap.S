@@ -16,7 +16,14 @@
     .globl __restore
     .align 2
 __alltraps:
+    # check user / kernel mode
+    csrr tp, sstatus
+    andi tp, tp, 0x100 # sstatus & (1 << 8); check SPP
+    beqz tp, __user_trap_start # SPP = 0, user mode trap
+    j __real_trap_entry # SPP = 1, kernel mode trap, do not modify stack pointer
+__user_trap_start:
     csrrw sp, sscratch, sp
+__real_trap_entry:
     # now sp->kernel stack, sscratch->user stack
     # allocate a TrapContext on kernel stack
     addi sp, sp, -34*REGISTER_SIZE # general purpose registers and 2 csr registers
@@ -52,6 +59,12 @@ __restore:
     csrw sstatus, t0
     csrw sepc, t1
     csrw sscratch, t2
+
+    # check SPP
+    andi t0, t0, 0x100
+    bnez t0, __kernel_trap_end # SPP != 0, kernel mode trap
+
+__user_trap_end:
     # restore general-purpuse registers except sp/tp
     ld x1, 1*REGISTER_SIZE(sp)
     ld x3, 3*REGISTER_SIZE(sp)
@@ -64,4 +77,18 @@ __restore:
     addi sp, sp, 34*REGISTER_SIZE
     # now sp->kernel stack, sscratch->user stack
     csrrw sp, sscratch, sp
+    sret
+
+__kernel_trap_end:
+    # restore general-purpuse registers except sp/tp
+    ld x1, 1*REGISTER_SIZE(sp)
+    ld x3, 3*REGISTER_SIZE(sp)
+    .set n, 5
+    .rept 27
+        LOAD_GP %n
+        .set n, n+1
+    .endr
+    # release TrapContext on kernel stack
+    addi sp, sp, 34*REGISTER_SIZE
+    # do not exchange sp and sscratch
     sret

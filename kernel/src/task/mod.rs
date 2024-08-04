@@ -13,12 +13,14 @@ mod context;
 mod switch;
 mod task;
 
-use crate::config::MAX_APP_NUM;
-use crate::loader::{get_num_app, init_app_cx};
+use crate::loader::get_app_data;
+use crate::loader::get_num_app;
 use crate::sbi::shutdown;
 use crate::sync::UPSafeCell;
 #[cfg(feature = "profiling")]
 use crate::timer::get_time_us;
+use crate::trap::TrapContext;
+use alloc::vec::Vec;
 use lazy_static::*;
 #[cfg(not(feature = "profiling"))]
 use switch::__switch;
@@ -45,7 +47,7 @@ pub struct TaskManager {
 /// Inner of Task Manager
 pub struct TaskManagerInner {
     /// task list
-    tasks: [TaskControlBlock; MAX_APP_NUM],
+    tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
     current_task: usize,
     /// calculate kernel space time for a task
@@ -65,29 +67,23 @@ impl TaskManagerInner {
 lazy_static! {
     /// Global variable: TASK_MANAGER
     pub static ref TASK_MANAGER: TaskManager = {
+        kprintln!("init TASK_MANAGER");
         let num_app = get_num_app();
-        let mut tasks = [TaskControlBlock {
-            task_cx: TaskContext::zero_init(),
-            task_status: TaskStatus::UnInit,
-            #[cfg(feature = "profiling")]
-            user_time: 0,
-            #[cfg(feature = "profiling")]
-            kernel_time: 0,
-        }; MAX_APP_NUM];
-        for (i, task) in tasks.iter_mut().enumerate() {
-            task.task_cx = TaskContext::goto_restore(init_app_cx(i));
-            task.task_status = TaskStatus::Ready;
+        kprintln!("num_app = {}", num_app);
+        let mut tasks: Vec<TaskControlBlock> = Vec::new();
+        for i in 0..num_app {
+            tasks.push(TaskControlBlock::new(get_app_data(i), i));
         }
         TaskManager {
             num_app,
             inner: unsafe {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
-                    current_task: 0,
+                    current_task:0,
                     #[cfg(feature = "profiling")]
                     stop_watch: 0,
                 })
-            },
+            }
         }
     };
 }
@@ -126,7 +122,12 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         #[cfg(feature = "profiling")]
-        kprintln!("[kernel] task {} exited. user_time: {} us, kernel_time: {} us.", current, inner.tasks[current].user_time, inner.tasks[current].kernel_time);
+        kprintln!(
+            "[kernel] task {} exited. user_time: {} us, kernel_time: {} us.",
+            current,
+            inner.tasks[current].user_time,
+            inner.tasks[current].kernel_time
+        );
         inner.tasks[current].task_status = TaskStatus::Exited;
     }
 
@@ -138,7 +139,9 @@ impl TaskManager {
         let current = inner.current_task;
         (current + 1..current + self.num_app + 1)
             .map(|id| id % self.num_app)
-            .find(|id| inner.tasks[*id].task_status == TaskStatus::Ready)
+            .find(|id| {
+                inner.tasks[*id].task_status == TaskStatus::Ready
+            })
     }
 
     /// Switch current `Running` task to the task we have found,
@@ -185,6 +188,16 @@ impl TaskManager {
         // refresh stop watch for recording kernel time of task A
         inner.tasks[current].user_time += inner.refresh_stop_watch();
     }
+    fn get_current_token(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].get_user_token()
+    }
+    fn get_current_trap_cx(&self) -> &mut TrapContext {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].get_trap_cx()
+    }
 }
 
 /// run first task
@@ -219,6 +232,15 @@ pub fn exit_current_and_run_next() {
     run_next_task();
 }
 
+/// Get the current 'Running' task's token.
+pub fn current_user_token() -> usize {
+    TASK_MANAGER.get_current_token()
+}
+
+/// Get the current 'Running' task's trap contexts.
+pub fn current_trap_cx() -> &'static mut TrapContext {
+    TASK_MANAGER.get_current_trap_cx()
+}
 
 /// Calcualte kernel time before running in user space
 #[cfg(feature = "profiling")]

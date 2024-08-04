@@ -25,5 +25,13 @@ multipg-binary: multipg-elf
 
 multipg-build: multipg-binary
 
+vmm-elf: $(APPS)
+	@cargo build --release
+
+vmm-binary: vmm-elf
+	@$(foreach elf, $(ELFS), $(OBJCOPY) $(elf) --strip-all -O binary $(patsubst $(TARGET_DIR)/%, $(TARGET_DIR)/%.bin, $(elf));)
+
+vmm-build: vmm-binary
+
 clean:
 	@cargo clean

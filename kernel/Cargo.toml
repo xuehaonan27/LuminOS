@@ -9,15 +9,19 @@ riscv = "0.11.1"
 log = "0.4.22"
 sbi-rt = { version = "0.0.3", features = ["legacy"] }
 lazy_static = { version = "1.5.0", features = ["spin_no_std"] }
+buddy_system_allocator = "0.10.0"
+bitflags = "2.6.0"
+xmas-elf = "0.9.1"
 
 [profile.release]
 debug = true
 
 [features]
-default = ["multitasking", "profiling"]
+default = ["vmm", "profiling"]
 debug = []
 batch = []
 multiprogramming = []
 multitasking = []
 profiling = []
 D_EXTENSION_ENABLED = []
+vmm = []

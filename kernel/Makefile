@@ -47,21 +47,28 @@ batch-kernel:
 	@cd ../user && make batch-build
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo build $(MODE_ARG) --features "batch debug"
+	@cargo build $(MODE_ARG) --features "batch debug" --no-default-features
 	@rm src/linker.ld
 
 multipg-kernel:
 	@cd ../user && make multipg-build
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo build $(MODE_ARG) --features "multiprogramming debug profiling"
+	@cargo build $(MODE_ARG) --features "multiprogramming debug profiling" --no-default-features
 	@rm src/linker.ld
 
 multitsk-kernel:
 	@cd ../user && make multipg-build
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo build $(MODE_ARG) --features "multitasking debug profiling"
+	@cargo build $(MODE_ARG) --features "multitasking debug profiling" --no-default-features
+	@rm src/linker.ld
+
+vmm-kernel:
+	@cd ../user && make vmm-build
+	@echo Platform: $(BOARD)
+	@cp src/linker-$(BOARD).ld src/linker.ld
+	@cargo build $(MODE_ARG) --features "vmm debug" --no-default-features
 	@rm src/linker.ld
 
 clean:
@@ -101,4 +108,4 @@ gdbserver: qemu-version-check build
 gdbclient:
 	@riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'
 
-.PHONY: build env kernel batch-kernel multipg-kernel clean disasm disasm-vim run-inner gdbserver gdbclient qemu-version-check
+.PHONY: build env kernel batch-kernel multipg-kernel multitsk-kernel vmm-kernel clean disasm disasm-vim run-inner gdbserver gdbclient qemu-version-check

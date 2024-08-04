@@ -18,3 +18,8 @@ pub fn panic(info: &PanicInfo) -> ! {
     }
     shutdown(true)
 }
+
+#[alloc_error_handler]
+pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
+    panic!("Heap allocation error, layout = {:?}", layout);
+}

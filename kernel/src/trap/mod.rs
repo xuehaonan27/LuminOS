@@ -1,4 +1,4 @@
-use core::arch::global_asm;
+use core::arch::{asm, global_asm};
 
 use riscv::register::{
     scause::{self, Exception, Interrupt, Trap},
@@ -8,7 +8,15 @@ use riscv::register::{
 
 #[cfg(feature = "multiprogramming")]
 use crate::task::exit_current_and_run_next;
-use crate::{syscall::syscall, task::suspend_current_and_run_next, timer::set_next_trigger};
+use crate::{
+    config::{TRAMPOLINE, TRAP_CONTEXT},
+    syscall::syscall,
+    task::{
+        current_trap_cx, current_user_token, exit_current_and_run_next,
+        suspend_current_and_run_next,
+    },
+    timer::set_next_trigger,
+};
 
 #[cfg(feature = "batch")]
 use crate::batch::run_next_app;
@@ -22,18 +30,54 @@ global_asm!(include_str!("trap_d_ext.S"));
 global_asm!(include_str!("trap.S"));
 
 pub fn init() {
-    extern "C" {
-        fn __alltraps();
-    }
+    set_kernel_trap_entry();
+}
+
+fn set_kernel_trap_entry() {
     unsafe {
-        stvec::write(__alltraps as usize, TrapMode::Direct);
+        stvec::write(trap_from_kernel as usize, TrapMode::Direct);
+    }
+}
+
+fn set_user_trap_entry() {
+    unsafe {
+        stvec::write(TRAMPOLINE as usize, TrapMode::Direct);
     }
 }
 
 #[no_mangle]
-pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
+pub fn trap_from_kernel() -> ! {
+    panic!("a trap from");
+}
+
+#[no_mangle]
+pub fn trap_return() -> ! {
+    set_user_trap_entry();
+    let trap_cx_ptr = TRAP_CONTEXT;
+    let user_satp = current_user_token();
+    extern "C" {
+        fn __alltraps();
+        fn __restore();
+    }
+    let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
+    unsafe {
+        asm!(
+            "fence.i",
+            "jr {restore_va}",
+            restore_va = in(reg) restore_va,
+            in("a0") trap_cx_ptr,
+            in("a1") user_satp,
+            options(noreturn)
+        );
+    }
+}
+
+#[no_mangle]
+pub fn trap_handler() -> ! {
     #[cfg(feature = "profiling")]
     crate::task::user_time_end();
+    set_kernel_trap_entry();
+    let cx = current_trap_cx();
     let scause = scause::read();
     let stval = stval::read();
     match scause.cause() {
@@ -41,12 +85,17 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             cx.sepc += 4;
             cx.x[10] = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
         }
-        Trap::Exception(Exception::StoreFault) | Trap::Exception(Exception::StorePageFault) => {
+        Trap::Exception(Exception::StoreFault)
+        | Trap::Exception(Exception::StorePageFault)
+        | Trap::Exception(Exception::LoadFault)
+        | Trap::Exception(Exception::LoadPageFault) => {
             kprintln!("[kernel] PageFault in application");
 
             #[cfg(feature = "batch")]
             run_next_app();
             #[cfg(feature = "multiprogramming")]
+            exit_current_and_run_next();
+            #[cfg(feature = "vmm")]
             exit_current_and_run_next();
         }
         Trap::Exception(Exception::IllegalInstruction) => {
@@ -55,6 +104,8 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             #[cfg(feature = "batch")]
             run_next_app();
             #[cfg(feature = "multiprogramming")]
+            exit_current_and_run_next();
+            #[cfg(feature = "vmm")]
             exit_current_and_run_next();
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
@@ -72,11 +123,11 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
     }
     #[cfg(feature = "profiling")]
     crate::task::user_time_start();
-    cx
+    trap_return();
 }
 
 /// Enable timer interrupt.
-/// Should be called during kernel initialization. 
+/// Should be called during kernel initialization.
 pub fn enable_timer_interrupt() {
     unsafe { sie::set_stimer() }
 }

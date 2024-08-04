@@ -1,27 +1,27 @@
-use core::arch::asm;
-
+#[cfg(not(feature = "vmm"))]
 use crate::{config::*, trap::TrapContext};
-
+#[cfg(not(feature = "vmm"))]
 #[repr(align(4096))]
 #[derive(Copy, Clone)]
 struct KernelStack {
     data: [u8; KERNEL_STACK_SIZE],
 }
-
+#[cfg(not(feature = "vmm"))]
 #[repr(align(4096))]
 #[derive(Copy, Clone)]
 struct UserStack {
     data: [u8; USER_STACK_SIZE],
 }
 
+#[cfg(not(feature = "vmm"))]
 static KERNEL_STACK: [KernelStack; MAX_APP_NUM] = [KernelStack {
     data: [0; KERNEL_STACK_SIZE],
 }; MAX_APP_NUM];
-
+#[cfg(not(feature = "vmm"))]
 static USER_STACK: [UserStack; MAX_APP_NUM] = [UserStack {
     data: [0; USER_STACK_SIZE],
 }; MAX_APP_NUM];
-
+#[cfg(not(feature = "vmm"))]
 impl KernelStack {
     fn get_sp(&self) -> usize {
         self.data.as_ptr() as usize + KERNEL_STACK_SIZE
@@ -34,13 +34,14 @@ impl KernelStack {
         trap_cx_ptr as usize
     }
 }
-
+#[cfg(not(feature = "vmm"))]
 impl UserStack {
     fn get_sp(&self) -> usize {
         self.data.as_ptr() as usize + USER_STACK_SIZE
     }
 }
 
+#[cfg(not(feature = "vmm"))]
 pub fn load_apps() {
     extern "C" {
         fn _num_app();
@@ -60,10 +61,11 @@ pub fn load_apps() {
         };
         let dst = unsafe { core::slice::from_raw_parts_mut(base_i as *mut u8, src.len()) };
         dst.copy_from_slice(src);
-        unsafe { asm!("fence.i") };
+        unsafe { core::arch::asm!("fence.i") };
     }
 }
 
+#[cfg(not(feature = "vmm"))]
 fn get_base_i(app_id: usize) -> usize {
     APP_BASE_ADDRESS + app_id * APP_SIZE_LIMIT
 }
@@ -76,9 +78,28 @@ pub fn get_num_app() -> usize {
 }
 
 /// Get app info with entry and sp and save `TrapContext` in kernel stack
+#[cfg(not(feature = "vmm"))]
 pub fn init_app_cx(app_id: usize) -> usize {
     KERNEL_STACK[app_id].push_context(TrapContext::init_context(
         get_base_i(app_id),
         USER_STACK[app_id].get_sp(),
     ))
+}
+
+/// Get application data according to its id
+#[allow(unused)]
+pub fn get_app_data(app_id: usize) -> &'static [u8] {
+    extern "C" {
+        fn _num_app();
+    }
+    let num_app_ptr = _num_app as usize as *const usize;
+    let num_app = get_num_app();
+    let app_start = unsafe { core::slice::from_raw_parts(num_app_ptr.add(1), num_app + 1) };
+    assert!(app_id < num_app);
+    unsafe {
+        core::slice::from_raw_parts(
+            app_start[app_id] as *const u8,
+            app_start[app_id + 1] - app_start[app_id],
+        )
+    }
 }

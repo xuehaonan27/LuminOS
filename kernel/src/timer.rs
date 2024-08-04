@@ -4,6 +4,7 @@ use crate::{config::CLOCK_FREQ, sbi::set_timer};
 
 const TICKS_PER_SEC: usize = 100; // Timer interrupt every 10ms.
 const MICRO_PER_SEC: usize = 1_000_000; // 1 millon microseconds per second.
+const MSEC_PER_SEC: usize = 1000; // 1 thousand milliseconds per second.
 
 /// Get value from `mtime` register.
 pub fn get_time() -> usize {
@@ -17,6 +18,13 @@ pub fn set_next_trigger() {
 }
 
 /// Get time in microseconds.
+#[allow(unused)]
 pub fn get_time_us() -> usize {
     time::read() / (CLOCK_FREQ / MICRO_PER_SEC)
+}
+
+/// Get time in miliseconds.
+#[allow(unused)]
+pub fn get_time_ms() -> usize {
+    time::read() / (CLOCK_FREQ / MSEC_PER_SEC)
 }

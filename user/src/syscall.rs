@@ -6,7 +6,7 @@ const SYSCALL_YIELD: usize = 124;
 const SYSCALL_GET_TIME: usize = 169;
 
 fn syscall(id: usize, args: [usize; 3]) -> isize {
-    let ret: isize;
+    let mut ret: isize;
     unsafe {
         asm!("ecall",
             // inlateout means x10 serves as both input and output register.

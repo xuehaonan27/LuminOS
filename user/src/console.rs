@@ -1,10 +1,16 @@
 use core::fmt::{self, Write};
 
-use crate::write;
+use crate::{read, write};
 
 const __STDIN: usize = 0; // fd of standard input
 const __STDOUT: usize = 1; // fd of standard output
 const __STDERR: usize = 2; // fd of standard error
+
+pub fn getchar() -> u8 {
+    let mut c = [0u8; 1];
+    read(__STDIN, &mut c);
+    c[0]
+}
 
 #[allow(non_camel_case_types)]
 struct __stdout;

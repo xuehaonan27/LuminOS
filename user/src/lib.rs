@@ -47,7 +47,7 @@ pub fn write(fd: usize, buf: &[u8]) -> isize {
 }
 
 pub fn exit(exit_code: i32) -> ! {
-    sys_exit(exit_code)
+    sys_exit(exit_code);
 }
 
 pub fn yield_() -> isize {
@@ -89,5 +89,11 @@ pub fn waitpid(pid: usize, exit_code: &mut i32) -> isize {
             }
             exit_pid => return exit_pid,
         }
+    }
+}
+pub fn sleep(period_ms: usize) {
+    let start = sys_get_time();
+    while sys_get_time() < start + period_ms as isize {
+        sys_yield();
     }
 }

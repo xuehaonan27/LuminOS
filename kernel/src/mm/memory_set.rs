@@ -64,6 +64,18 @@ impl MemorySet {
             None, // we do not need any initial data
         );
     }
+    /// Remove `MapArea` that starts with `start_vpn`
+    pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
+        if let Some((idx, area)) = self
+            .areas
+            .iter_mut()
+            .enumerate()
+            .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
+        {
+            area.unmap(&mut self.page_table);
+            self.areas.remove(idx);
+        }
+    }
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         // map the new area into process page table
         map_area.map(&mut self.page_table);
@@ -235,6 +247,32 @@ impl MemorySet {
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
+    pub fn from_existed_user(user_space: &MemorySet) -> MemorySet {
+        let mut memory_set = Self::new_bare();
+        // map trampoline
+        memory_set.map_trampoline();
+        // copy data sections / trap_context / user_stack
+        for area in user_space.areas.iter() {
+            let new_area = MapArea::from_another(area);
+            memory_set.push(new_area, None);
+            // copy data from another space
+            // FIXME: lazy mapping
+            for vpn in area.vpn_range {
+                let src_ppn = user_space.translate(vpn).unwrap().ppn();
+                let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
+                // when kernel code running, all kernel virtual addresses are translated
+                // into identical physical addresses.
+                // so just access corresponding virtual address.
+                dst_ppn
+                    .get_bytes_array()
+                    .copy_from_slice(&src_ppn.get_bytes_array());
+            }
+        }
+        memory_set
+    }
+    pub fn recycle_data_pages(&mut self) {
+        self.areas.clear()
+    }
 }
 
 #[derive(Debug)]
@@ -276,7 +314,7 @@ impl MapArea {
                 // hold this frame.
                 self.data_frames.insert(vpn, frame);
             }
-        }  
+        }
         // all pages' permission bits are same in an area.
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits()).unwrap();
         // map this virtual page in page table
@@ -329,6 +367,14 @@ impl MapArea {
             current_vpn.step(); // next page
         }
     }
+    pub fn from_another(another: &MapArea) -> Self {
+        Self {
+            vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
+            data_frames: BTreeMap::new(),
+            map_type: another.map_type,
+            map_perm: another.map_perm,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -339,7 +385,7 @@ pub enum MapType {
 
 bitflags! {
     /// Used in [`MapArea`], preserving RWXU fields only
-    #[derive(Debug)]
+    #[derive(Clone, Copy, Debug)]
     pub struct MapPermission: u8 {
         const R = 1 << 1;
         const W = 1 << 2;

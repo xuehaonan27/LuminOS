@@ -33,5 +33,20 @@ vmm-binary: vmm-elf
 
 vmm-build: vmm-binary
 
+CP := cp 
+
+TEST ?= 
+
+process-elf: $(APPS)
+	@cargo build --release
+ifeq ($(TEST), 1)
+	@$(CP) $(TARGET_DIR)/usertests $(TARGET_DIR)/initproc
+endif
+
+process-binary: process-elf
+	@$(foreach elf, $(ELFS), $(OBJCOPY) $(elf) --strip-all -O binary $(patsubst $(TARGET_DIR)/%, $(TARGET_DIR)/%.bin, $(elf));)
+
+process-build: process-binary
+
 clean:
 	@cargo clean

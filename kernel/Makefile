@@ -26,6 +26,9 @@ OBJCOPY := rust-objcopy --binary-architecture=riscv64
 # Disassembly
 DISASM ?= -x
 
+# Run usertests or usershell
+TEST ?=
+
 build: env $(KERNEL_BIN)
 
 env:
@@ -69,6 +72,13 @@ vmm-kernel:
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
 	@cargo build $(MODE_ARG) --features "vmm debug" --no-default-features
+	@rm src/linker.ld
+
+process-kernel:
+	@cd ../user && make process-build TEST=$(TEST)
+	@echo Platform: $(BOARD)
+	@cp src/linker-$(BOARD).ld src/linker.ld
+	@cargo build --release --features "vmm process debug" --no-default-features
 	@rm src/linker.ld
 
 clean:

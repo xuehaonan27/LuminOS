@@ -17,7 +17,7 @@ xmas-elf = "0.9.1"
 debug = true
 
 [features]
-default = ["vmm", "profiling"]
+default = ["vmm", "process", "profiling"]
 debug = []
 batch = []
 multiprogramming = []
@@ -25,3 +25,4 @@ multitasking = []
 profiling = []
 D_EXTENSION_ENABLED = []
 vmm = []
+process = []

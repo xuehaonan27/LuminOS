@@ -4,276 +4,118 @@
 //! implemented here.
 //!
 //! A single global instance of [`TaskManager`] called `TASK_MANAGER` controls
-//! all the tasks in the operating system.
+//! all the tasks in the whole operating system.
+//!
+//! A single global instance of [`Processor`] called `PROCESSOR` monitors running
+//! task(s) for each core.
+//!
+//! A single global instance of [`PidAllocator`] called `PID_ALLOCATOR` allocates
+//! pid for user apps.
 //!
 //! Be careful when you see `__switch` ASM function in `switch.S`. Control flow around this function
 //! might not be what you expect.
-
 mod context;
+mod manager;
+mod pid;
+mod processor;
 mod switch;
+#[allow(clippy::module_inception)]
 mod task;
 
-use crate::loader::get_app_data;
-use crate::loader::get_num_app;
+use crate::loader::get_app_data_by_name;
 use crate::sbi::shutdown;
-use crate::sync::UPSafeCell;
-#[cfg(feature = "profiling")]
-use crate::timer::get_time_us;
-use crate::trap::TrapContext;
-use alloc::vec::Vec;
+use alloc::sync::Arc;
 use lazy_static::*;
-#[cfg(not(feature = "profiling"))]
+pub use manager::fetch_task;
 use switch::__switch;
 use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
+pub use manager::add_task;
+pub use pid::{pid_alloc, KernelStack, PidHandle};
+pub use processor::{
+    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
+};
+/// Suspend the current 'Running' task and run the next task in task list.
+pub fn suspend_current_and_run_next() {
+    // There must be an application running.
+    let task = take_current_task().unwrap();
 
-/// The task manager, where all the tasks are managed.
-///
-/// Functions implemented on `TaskManager` deals with all task state transitions
-/// and task context switching. For convenience, you can find wrappers around it
-/// in the module level.
-///
-/// Most of `TaskManager` are hidden behind the field `inner`, to defer
-/// borrowing checks to runtime. You can see examples on how to use `inner` in
-/// existing functions on `TaskManager`.
-pub struct TaskManager {
-    /// total number of tasks
-    num_app: usize,
-    /// use inner value to get mutable access
-    inner: UPSafeCell<TaskManagerInner>,
+    // ---- access current TCB exclusively
+    let mut task_inner = task.inner_exclusive_access();
+    let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
+    // Change status to Ready
+    task_inner.task_status = TaskStatus::Ready;
+    drop(task_inner);
+    // ---- release current PCB
+
+    // push back to ready queue.
+    add_task(task);
+    // jump to scheduling cycle
+    schedule(task_cx_ptr);
 }
 
-/// Inner of Task Manager
-pub struct TaskManagerInner {
-    /// task list
-    tasks: Vec<TaskControlBlock>,
-    /// id of current `Running` task
-    current_task: usize,
-    /// calculate kernel space time for a task
-    #[cfg(feature = "profiling")]
-    stop_watch: usize,
-}
+/// pid of usertests app in make run TEST=1
+pub const IDLE_PID: usize = 0;
 
-impl TaskManagerInner {
-    #[cfg(feature = "profiling")]
-    fn refresh_stop_watch(&mut self) -> usize {
-        let start_time = self.stop_watch;
-        self.stop_watch = get_time_us();
-        self.stop_watch - start_time
+/// Exit the current 'Running' task and run the next task in task list.
+pub fn exit_current_and_run_next(exit_code: i32) {
+    // take from Processor
+    let task = take_current_task().unwrap();
+
+    let pid = task.getpid();
+    if pid == IDLE_PID {
+        kprintln!(
+            "[kernel] Idle process exit with exit_code {} ...",
+            exit_code
+        );
+        if exit_code != 0 {
+            //crate::sbi::shutdown(255); //255 == -1 for err hint
+            shutdown(true)
+        } else {
+            //crate::sbi::shutdown(0); //0 for success hint
+            shutdown(false)
+        }
     }
+
+    // **** access current TCB exclusively
+    let mut inner = task.inner_exclusive_access();
+    // Change status to Zombie
+    inner.task_status = TaskStatus::Zombie;
+    // Record exit code
+    inner.exit_code = exit_code;
+    // do not move to its parent but under initproc
+
+    // ++++++ access initproc TCB exclusively
+    {
+        let mut initproc_inner = INITPROC.inner_exclusive_access();
+        for child in inner.children.iter() {
+            child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROC));
+            initproc_inner.children.push(child.clone());
+        }
+        // stop holding TCB inner automatically
+    }
+    // ++++++ release parent PCB
+
+    inner.children.clear();
+    // deallocate user space
+    inner.memory_set.recycle_data_pages();
+    drop(inner);
+    // **** release current PCB
+    // drop task manually to maintain rc correctly
+    drop(task);
+    // we do not have to save task context
+    let mut _unused = TaskContext::zero_init();
+    schedule(&mut _unused as *mut _);
 }
 
 lazy_static! {
-    /// Global variable: TASK_MANAGER
-    pub static ref TASK_MANAGER: TaskManager = {
-        kprintln!("init TASK_MANAGER");
-        let num_app = get_num_app();
-        kprintln!("num_app = {}", num_app);
-        let mut tasks: Vec<TaskControlBlock> = Vec::new();
-        for i in 0..num_app {
-            tasks.push(TaskControlBlock::new(get_app_data(i), i));
-        }
-        TaskManager {
-            num_app,
-            inner: unsafe {
-                UPSafeCell::new(TaskManagerInner {
-                    tasks,
-                    current_task:0,
-                    #[cfg(feature = "profiling")]
-                    stop_watch: 0,
-                })
-            }
-        }
-    };
+    ///Globle process that init user shell
+    pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new(TaskControlBlock::new(
+        get_app_data_by_name("initproc").unwrap()
+    ));
 }
-
-impl TaskManager {
-    /// Run the first task in task list.
-    ///
-    /// Generally, the first task in task list is an idle task (we call it zero process later).
-    /// But in ch3, we load apps statically, so the first task is a real app.
-    fn run_first_task(&self) -> ! {
-        let mut inner = self.inner.exclusive_access();
-        let task0 = &mut inner.tasks[0];
-        task0.task_status = TaskStatus::Running;
-        let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
-        // start recording
-        #[cfg(feature = "profiling")]
-        inner.refresh_stop_watch();
-        drop(inner);
-        let mut _unused = TaskContext::zero_init();
-        // before this, we should drop local variables that must be dropped manually
-        unsafe {
-            __switch(&mut _unused as *mut TaskContext, next_task_cx_ptr);
-        }
-        panic!("unreachable in run_first_task!");
-    }
-
-    /// Change the status of current `Running` task into `Ready`.
-    fn mark_current_suspended(&self) {
-        let mut inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-        inner.tasks[current].task_status = TaskStatus::Ready;
-    }
-
-    /// Change the status of current `Running` task into `Exited`.
-    fn mark_current_exited(&self) {
-        let mut inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-        #[cfg(feature = "profiling")]
-        kprintln!(
-            "[kernel] task {} exited. user_time: {} us, kernel_time: {} us.",
-            current,
-            inner.tasks[current].user_time,
-            inner.tasks[current].kernel_time
-        );
-        inner.tasks[current].task_status = TaskStatus::Exited;
-    }
-
-    /// Find next task to run and return task id.
-    ///
-    /// In this case, we only return the first `Ready` task in task list.
-    fn find_next_task(&self) -> Option<usize> {
-        let inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-        (current + 1..current + self.num_app + 1)
-            .map(|id| id % self.num_app)
-            .find(|id| {
-                inner.tasks[*id].task_status == TaskStatus::Ready
-            })
-    }
-
-    /// Switch current `Running` task to the task we have found,
-    /// or there is no `Ready` task and we can exit with all applications completed
-    fn run_next_task(&self) {
-        if let Some(next) = self.find_next_task() {
-            let mut inner = self.inner.exclusive_access();
-            let current = inner.current_task;
-            inner.tasks[next].task_status = TaskStatus::Running;
-            inner.current_task = next;
-            let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
-            let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
-            // add kernel time for task A
-            // refresh stop watch for recording kernel time of task B
-            #[cfg(feature = "profiling")]
-            (inner.tasks[current].kernel_time += inner.refresh_stop_watch());
-            drop(inner);
-            // before this, we should drop local variables that must be dropped manually
-            // debug_println!("before switch");
-            unsafe {
-                __switch(current_task_cx_ptr, next_task_cx_ptr);
-            }
-            // go back to user mode
-        } else {
-            kprintln!("All applications completed!");
-            #[cfg(feature = "profiling")]
-            kprintln!("task switch time: {} us", get_switch_time_count());
-            shutdown(false);
-        }
-    }
-    #[cfg(feature = "profiling")]
-    fn user_time_start(&self) {
-        let mut inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-        // add kernel time for task B
-        // refresh stop watch for recording user time of task B
-        inner.tasks[current].kernel_time += inner.refresh_stop_watch();
-    }
-    #[cfg(feature = "profiling")]
-    fn user_time_end(&self) {
-        let mut inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-        // add user time for task A
-        // refresh stop watch for recording kernel time of task A
-        inner.tasks[current].user_time += inner.refresh_stop_watch();
-    }
-    fn get_current_token(&self) -> usize {
-        let inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-        inner.tasks[current].get_user_token()
-    }
-    fn get_current_trap_cx(&self) -> &mut TrapContext {
-        let inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-        inner.tasks[current].get_trap_cx()
-    }
-}
-
-/// run first task
-pub fn run_first_task() {
-    TASK_MANAGER.run_first_task();
-}
-
-/// rust next task
-fn run_next_task() {
-    TASK_MANAGER.run_next_task();
-}
-
-/// suspend current task
-fn mark_current_suspended() {
-    TASK_MANAGER.mark_current_suspended();
-}
-
-/// exit current task
-fn mark_current_exited() {
-    TASK_MANAGER.mark_current_exited();
-}
-
-/// suspend current task, then run next task
-pub fn suspend_current_and_run_next() {
-    mark_current_suspended();
-    run_next_task();
-}
-
-/// exit current task,  then run next task
-pub fn exit_current_and_run_next() {
-    mark_current_exited();
-    run_next_task();
-}
-
-/// Get the current 'Running' task's token.
-pub fn current_user_token() -> usize {
-    TASK_MANAGER.get_current_token()
-}
-
-/// Get the current 'Running' task's trap contexts.
-pub fn current_trap_cx() -> &'static mut TrapContext {
-    TASK_MANAGER.get_current_trap_cx()
-}
-
-/// Calcualte kernel time before running in user space
-#[cfg(feature = "profiling")]
-pub fn user_time_start() {
-    TASK_MANAGER.user_time_start()
-}
-
-/// Calculate user time before running in kernel space
-#[cfg(feature = "profiling")]
-pub fn user_time_end() {
-    TASK_MANAGER.user_time_end()
-}
-
-#[cfg(feature = "profiling")]
-static mut SWITCH_TIME_START: usize = 0; // FIXME: per HART
-#[cfg(feature = "profiling")]
-static mut SWITCH_TIME_COUNT: usize = 0; // FIXME: per HART
-#[cfg(feature = "profiling")]
-static mut SWTICH_CNT: usize = 0; // FIXME: per HART
-#[cfg(feature = "profiling")]
-unsafe fn __switch(
-    current_task_cx_ptr: *mut TaskContext, // a0
-    next_task_cx_ptr: *const TaskContext,  // a1
-) {
-    SWTICH_CNT += 1;
-    SWITCH_TIME_START = get_time_us();
-    switch::__switch(current_task_cx_ptr, next_task_cx_ptr);
-    let this_switch = get_time_us() - SWITCH_TIME_START;
-    kprintln!("[kernel] switch {}: {} us", SWTICH_CNT, this_switch);
-    SWITCH_TIME_COUNT += this_switch;
-}
-
-#[cfg(feature = "profiling")]
-fn get_switch_time_count() -> usize {
-    unsafe { SWITCH_TIME_COUNT }
+///Add init process to the manager
+pub fn add_initproc() {
+    add_task(INITPROC.clone());
 }

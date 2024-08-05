@@ -11,9 +11,7 @@ use crate::task::{exit_current_and_run_next, suspend_current_and_run_next};
 #[cfg(any(feature = "multitasking", feature = "vmm"))]
 use crate::timer::get_time_ms;
 use crate::{
-    loader::get_app_data_by_name,
-    mm::{translated_refmut, translated_str},
-    task::{add_task, current_task, current_user_token},
+    loader::get_app_data_by_name, mm::{translated_refmut, translated_str}, sbi::shutdown, task::{add_task, current_task, current_user_token}
 };
 
 /// Batch Kernel: batched app exits and schedule the next one
@@ -103,4 +101,8 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         -2
     }
     // ---- release current TCB lock automatically
+}
+
+pub fn sys_reboot() -> ! {
+    shutdown(false);
 }

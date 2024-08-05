@@ -46,7 +46,7 @@ kernel:
 	@rustc build.rs
 	@./build
 	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo build --release --features "vmm process debug" --no-default-features
+	@cargo build --release
 	@rm src/linker.ld
 
 clean:

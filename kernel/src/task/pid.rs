@@ -1,11 +1,9 @@
 use alloc::vec::Vec;
 use lazy_static::lazy_static;
 
-use crate::{
-    config::*,
-    mm::{MapPermission, VirtAddr, KERNEL_SPACE},
-    sync::UPSafeCell,
-};
+use crate::config::*;
+use crate::mm::{MapPermission, VirtAddr, KERNEL_SPACE};
+use crate::sync::UPSafeCell;
 
 /// RAII PID
 #[derive(Debug)]

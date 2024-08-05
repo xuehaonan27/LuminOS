@@ -6,20 +6,12 @@ use riscv::register::{
     stvec::{self, TrapMode},
 };
 
-#[cfg(feature = "multiprogramming")]
-use crate::task::exit_current_and_run_next;
-use crate::{
-    config::{TRAMPOLINE, TRAP_CONTEXT},
-    syscall::syscall,
-    task::{
-        current_trap_cx, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next,
-    },
-    timer::set_next_trigger,
+use crate::config::{TRAMPOLINE, TRAP_CONTEXT};
+use crate::syscall::syscall;
+use crate::task::{
+    current_trap_cx, current_user_token, exit_current_and_run_next, suspend_current_and_run_next,
 };
-
-#[cfg(feature = "batch")]
-use crate::batch::run_next_app;
+use crate::timer::set_next_trigger;
 
 mod context;
 pub use context::TrapContext;
@@ -93,22 +85,10 @@ pub fn trap_handler() -> ! {
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
             kprintln!("[kernel] PageFault in application");
-
-            #[cfg(feature = "batch")]
-            run_next_app();
-            #[cfg(feature = "multiprogramming")]
-            exit_current_and_run_next();
-            #[cfg(feature = "vmm")]
             exit_current_and_run_next(-2);
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             kprintln!("[kernel] IllegalInstruction in application");
-
-            #[cfg(feature = "batch")]
-            run_next_app();
-            #[cfg(feature = "multiprogramming")]
-            exit_current_and_run_next();
-            #[cfg(feature = "vmm")]
             exit_current_and_run_next(-3);
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {

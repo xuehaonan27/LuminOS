@@ -1,4 +1,3 @@
-#[cfg(feature = "vmm")]
 use crate::trap::trap_return;
 
 #[derive(Debug, Clone, Copy)]
@@ -27,22 +26,6 @@ impl TaskContext {
         }
     }
 
-    /// set task context {__restore ASM funciton, kernel stack, s_0..12 }
-    #[cfg(not(feature = "vmm"))]
-    pub fn goto_restore(kstack_ptr: usize) -> Self {
-        extern "C" {
-            fn __restore();
-        }
-        Self {
-            ra: __restore as usize,
-            sp: kstack_ptr,
-            s: [0; 12],
-            #[cfg(feature = "D_EXTENSION_ENABLED")]
-            fs: [0; 12],
-        }
-    }
-
-    #[cfg(feature = "vmm")]
     pub fn goto_trap_return(kstack_ptr: usize) -> Self {
         Self {
             ra: trap_return as usize,

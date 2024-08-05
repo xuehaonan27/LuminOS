@@ -2,11 +2,9 @@ use alloc::vec::Vec;
 use alloc::{string::String, vec};
 use bitflags::*;
 
-use super::{
-    address::{PhysPageNum, StepByOne, VirtPageNum, PPN_WIDTH_SV39},
-    frame_allocator::{frame_alloc, FrameTracker},
-    PhysAddr, VirtAddr,
-};
+use super::address::{PhysPageNum, StepByOne, VirtPageNum, PPN_WIDTH_SV39};
+use super::frame_allocator::{frame_alloc, FrameTracker};
+use super::{PhysAddr, VirtAddr};
 
 const PTE_PPN_OFFSET: usize = 10;
 

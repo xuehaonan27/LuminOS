@@ -1,18 +1,11 @@
 use alloc::sync::Arc;
 
-#[cfg(feature = "batch")]
-use crate::batch::run_next_app;
-#[cfg(any(
-    feature = "multiprogramming",
-    feature = "multitasking",
-    feature = "vmm"
-))]
+use crate::loader::get_app_data_by_name;
+use crate::mm::{translated_refmut, translated_str};
+use crate::sbi::shutdown;
+use crate::task::{add_task, current_task, current_user_token};
 use crate::task::{exit_current_and_run_next, suspend_current_and_run_next};
-#[cfg(any(feature = "multitasking", feature = "vmm"))]
 use crate::timer::get_time_ms;
-use crate::{
-    loader::get_app_data_by_name, mm::{translated_refmut, translated_str}, sbi::shutdown, task::{add_task, current_task, current_user_token}
-};
 
 /// Batch Kernel: batched app exits and schedule the next one
 /// Multiprogramming Kernel: task exits and submit and exit code
@@ -24,11 +17,6 @@ pub fn sys_exit(exit_code: i32) -> ! {
 /// Current task gives up resources for other tasks
 /// Syscall ID: 124
 pub fn sys_yield() -> isize {
-    #[cfg(any(
-        feature = "multiprogramming",
-        feature = "multitasking",
-        feature = "vmm"
-    ))]
     suspend_current_and_run_next();
     0
 }

@@ -21,6 +21,8 @@ pub struct TaskControlBlockInner {
     pub trap_cx_ppn: PhysPageNum,
     #[allow(unused)]
     pub base_size: usize,
+    pub heap_bottom: usize,
+    pub program_brk: usize,
     pub task_cx: TaskContext,
     pub task_status: TaskStatus,
     pub memory_set: MemorySet,
@@ -47,6 +49,27 @@ impl TaskControlBlockInner {
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
     }
+    pub fn change_program_brk(&mut self, size: i32) -> Option<usize> {
+        assert!((size as isize) < isize::MAX);
+        let old_break = self.program_brk;
+        let new_brk = self.program_brk as isize + size as isize;
+        if new_brk < self.heap_bottom as isize {
+            return None;
+        }
+        let result = if size < 0 {
+            self.memory_set
+                .shrink_to(VirtAddr(self.heap_bottom), VirtAddr(new_brk as usize))
+        } else {
+            self.memory_set
+                .append_to(VirtAddr(self.heap_bottom), VirtAddr(new_brk as usize))
+        };
+        if result {
+            self.program_brk = new_brk as usize;
+            Some(old_break)
+        } else {
+            None
+        }
+    }
 }
 
 impl TaskControlBlock {
@@ -72,6 +95,8 @@ impl TaskControlBlock {
                 UPSafeCell::new(TaskControlBlockInner {
                     trap_cx_ppn,
                     base_size: user_sp,
+                    heap_bottom: user_sp,
+                    program_brk: user_sp,
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
                     task_status: TaskStatus::Ready,
                     memory_set,
@@ -91,6 +116,9 @@ impl TaskControlBlock {
             trap_handler as usize,
         );
         task_control_block
+    }
+    pub fn change_program_brk(self: &Arc<Self>, size: i32) -> Option<usize> {
+        self.inner_exclusive_access().change_program_brk(size)
     }
     pub fn exec(&self, elf_data: &[u8]) {
         // memory_set with elf program headers/trampoline/trap context/user stack
@@ -139,6 +167,8 @@ impl TaskControlBlock {
                 UPSafeCell::new(TaskControlBlockInner {
                     trap_cx_ppn,
                     base_size: parent_inner.base_size,
+                    heap_bottom: parent_inner.heap_bottom,
+                    program_brk: parent_inner.program_brk,
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
                     task_status: TaskStatus::Ready,
                     memory_set,

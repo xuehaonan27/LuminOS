@@ -247,6 +247,30 @@ impl MemorySet {
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
+    pub fn shrink_to(&mut self, start_va: VirtAddr, new_end: VirtAddr) -> bool {
+        if let Some(area) = self
+            .areas
+            .iter_mut()
+            .find(|area| area.vpn_range.get_start() == start_va.floor())
+        {
+            area.shrink_to(&mut self.page_table, new_end.ceil());
+            true
+        } else {
+            false
+        }
+    }
+    pub fn append_to(&mut self, start_va: VirtAddr, new_end: VirtAddr) -> bool {
+        if let Some(area) = self
+            .areas
+            .iter_mut()
+            .find(|area| area.vpn_range.get_start() == start_va.floor())
+        {
+            area.append_to(&mut self.page_table, new_end.ceil());
+            true
+        } else {
+            false
+        }
+    }
     pub fn from_existed_user(user_space: &MemorySet) -> MemorySet {
         let mut memory_set = Self::new_bare();
         // map trampoline
@@ -343,6 +367,20 @@ impl MapArea {
         for vpn in self.vpn_range {
             self.unmap_one(page_table, vpn);
         }
+    }
+    /// Shrink the area
+    pub fn shrink_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
+        for vpn in VPNRange::new(new_end, self.vpn_range.get_end()) {
+            self.unmap_one(page_table, vpn);
+        }
+        self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
+    }
+    /// Grow the area
+    pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
+        for vpn in VPNRange::new(self.vpn_range.get_start(), new_end) {
+            self.map_one(page_table, vpn);
+        }
+        self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
     }
     pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8]) {
         assert_eq!(self.map_type, MapType::Framed);

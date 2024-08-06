@@ -30,6 +30,15 @@ pub fn sys_getpid() -> isize {
     current_task().unwrap().pid.0 as isize
 }
 
+pub fn sys_sbrk(size: i32) -> isize {
+    let current_task = current_task().unwrap();
+    if let Some(old_brk) = current_task.change_program_brk(size) {
+        old_brk as isize
+    } else {
+        -1
+    }
+}
+
 /// Fork a process
 pub fn sys_fork() -> isize {
     let current_task = current_task().unwrap();

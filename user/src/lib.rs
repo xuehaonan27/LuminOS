@@ -66,6 +66,10 @@ pub fn getpid() -> isize {
     sys_getpid()
 }
 
+pub fn sbrk(size: i32) -> isize {
+    sys_sbrk(size)
+}
+
 pub fn fork() -> isize {
     sys_fork()
 }

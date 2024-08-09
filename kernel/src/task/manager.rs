@@ -20,6 +20,10 @@ impl TaskManager {
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
         self.ready_queue.pop_front()
     }
+    #[allow(unused)]
+    pub fn inspect_kernel_stack(&self) {
+        self.ready_queue.iter().for_each(|tcb| tcb.inspect_kernel_stack());   
+    }
 }
 
 lazy_static! {
@@ -33,4 +37,8 @@ pub fn add_task(task: Arc<TaskControlBlock>) {
 
 pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
     TASK_MANAGER.exclusive_access().fetch()
+}
+
+pub fn inspect_kernel_stack() {
+    TASK_MANAGER.exclusive_access().inspect_kernel_stack()
 }

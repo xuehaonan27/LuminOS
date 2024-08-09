@@ -1,6 +1,6 @@
 use riscv::register::time;
 
-use crate::{config::CLOCK_FREQ, sbi::set_timer};
+use crate::{board::CLOCK_FREQ, sbi::set_timer};
 
 const TICKS_PER_SEC: usize = 100; // Timer interrupt every 10ms.
 const MICRO_PER_SEC: usize = 1_000_000; // 1 millon microseconds per second.

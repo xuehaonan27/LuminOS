@@ -22,7 +22,8 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::loader::get_app_data_by_name;
+use crate::fs::inode::open_file;
+use crate::fs::inode::OpenFlags;
 use crate::sbi::shutdown;
 use alloc::sync::Arc;
 use lazy_static::*;
@@ -36,6 +37,8 @@ pub use pid::{pid_alloc, KernelStack, PidHandle};
 pub use processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
 };
+#[allow(unused)]
+pub use manager::inspect_kernel_stack;
 /// Suspend the current 'Running' task and run the next task in task list.
 pub fn suspend_current_and_run_next() {
     // There must be an application running.
@@ -111,9 +114,12 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 
 lazy_static! {
     ///Globle process that init user shell
-    pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new(TaskControlBlock::new(
-        get_app_data_by_name("initproc").unwrap()
-    ));
+    pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new({
+        let inode = open_file("initproc", OpenFlags::RDONLY).unwrap();
+        let v = inode.read_all();
+        let tcb = TaskControlBlock::new(v.as_slice());
+        tcb
+    });
 }
 ///Add init process to the manager
 pub fn add_initproc() {

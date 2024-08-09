@@ -39,7 +39,9 @@ fn set_user_trap_entry() {
 
 #[no_mangle]
 pub fn trap_from_kernel() -> ! {
-    panic!("a trap from");
+    use riscv::register::sepc;
+    kprintln!("stval = {:#x}, sepc = {:#x}", stval::read(), sepc::read());
+    panic!("a trap {:?} from kernel!", scause::read().cause());
 }
 
 #[no_mangle]

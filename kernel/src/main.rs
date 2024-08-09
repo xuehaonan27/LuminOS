@@ -15,11 +15,15 @@ extern crate alloc;
 extern crate bitflags;
 
 mod backtracer;
+#[path = "boards/qemu.rs"]
+mod board;
 mod config;
 #[macro_use]
 mod console;
 #[macro_use]
 mod debug;
+mod drivers;
+mod fs;
 mod loader;
 mod logging;
 mod mm;
@@ -48,20 +52,15 @@ pub fn clear_bss() {
 /// rust entry-point
 #[no_mangle]
 pub fn rust_main() -> ! {
-    kprintln!("[kernel] Using VMM kernel");
-    logging::init();
     clear_bss();
     kprintln!("[kernel] Hello, world!");
     mm::init();
-    kprintln!("[kernel] back to world!");
     mm::remap_test();
-    task::add_initproc();
-    kprintln!("[kernel] after initproc!");
     trap::init();
-    //trap::enable_interrupt();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
-    loader::list_apps();
+    fs::list_apps();
+    task::add_initproc();
     task::run_tasks();
     panic!("Unreachable in rust_main!");
 }

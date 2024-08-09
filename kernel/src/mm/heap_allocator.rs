@@ -15,6 +15,20 @@ pub fn init_heap() {
 }
 
 #[allow(unused)]
+pub fn inspect_heap() {
+    let guard = HEAP_ALLOCATOR.lock();
+    kprintln!(
+        r"[kernel] kernel heap:
+total:     {}
+allocated: {}
+requested: {}",
+        guard.stats_total_bytes(),
+        guard.stats_alloc_actual(),
+        guard.stats_alloc_user()
+    );
+}
+
+#[allow(unused)]
 pub fn heap_test() {
     use alloc::boxed::Box;
     use alloc::vec::Vec;

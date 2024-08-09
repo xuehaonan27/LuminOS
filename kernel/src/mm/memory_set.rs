@@ -5,7 +5,8 @@ use lazy_static::lazy_static;
 use riscv::register::satp;
 
 use crate::{
-    config::{MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE},
+    board::{MEMORY_END, MMIO},
+    config::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE},
     sync::UPSafeCell,
 };
 
@@ -29,6 +30,11 @@ extern "C" {
 lazy_static! {
     pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> =
         Arc::new(unsafe { UPSafeCell::new(MemorySet::new_kernel()) });
+}
+
+/// Get kernel space root ppn
+pub fn kernel_token() -> usize {
+    KERNEL_SPACE.exclusive_access().token()
 }
 
 /// Memory set structure, controls virtual-memory space.
@@ -101,7 +107,6 @@ impl MemorySet {
         // map trampoline
         memory_set.map_trampoline();
         // map kernel sections
-        // map kernel sections
         kprintln!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
         kprintln!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
         kprintln!(".data [{:#x}, {:#x})", sdata as usize, edata as usize);
@@ -160,6 +165,18 @@ impl MemorySet {
             ),
             None,
         );
+        kprintln!("mapping memory-mapped registers");
+        for pair in MMIO {
+            memory_set.push(
+                MapArea::new(
+                    (*pair).0.into(),
+                    ((*pair).0 + (*pair).1).into(),
+                    MapType::Identical,
+                    MapPermission::R | MapPermission::W,
+                ),
+                None,
+            )
+        }
         memory_set
     }
     pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {

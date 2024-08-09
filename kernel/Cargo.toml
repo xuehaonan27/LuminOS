@@ -12,6 +12,9 @@ lazy_static = { version = "1.5.0", features = ["spin_no_std"] }
 buddy_system_allocator = "0.10.0"
 bitflags = "2.6.0"
 xmas-elf = "0.9.1"
+spin = "0.9.8"
+virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "4ee80e5" }
+easy-fs = { path = "../easy-fs" }
 
 [profile.release]
 debug = true

@@ -1,5 +1,5 @@
 use alloc::{sync::Arc, vec::Vec};
-use easy_fs::{EasyFileSystem, Inode, BLOCK_SIZE};
+use easy_fs::{EasyFileSystem, Inode, SECTOR_SIZE};
 use lazy_static::lazy_static;
 use spin::Mutex;
 
@@ -30,8 +30,10 @@ impl OSInode {
     }
     pub fn read_all(&self) -> Vec<u8> {
         let mut inner = self.inner.lock();
-        let mut buffer = [0u8; BLOCK_SIZE];
+        let mut buffer = [0u8; SECTOR_SIZE];
         let mut v: Vec<u8> = Vec::new();
+        crate::mm::inspect_heap();
+        crate::task::inspect_kernel_stack();
         loop {
             let len = inner.inode.read_at(inner.offset, &mut buffer);
             if len == 0 {

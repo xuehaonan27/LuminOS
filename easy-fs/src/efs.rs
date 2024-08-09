@@ -2,7 +2,8 @@ use alloc::sync::Arc;
 use spin::Mutex;
 
 use crate::{
-    block_cache_sync_all, get_block_cache, Bitmap, BlockDevice, DataBlock, DiskInode, DiskInodeType, Inode, SuperBlock, BLOCK_SIZE
+    block_cache_sync_all, get_block_cache, Bitmap, BlockDevice, DataBlock, DiskInode,
+    DiskInodeType, Inode, SuperBlock, BLOCK_SIZE,
 };
 
 /// How many blocks could a block in bitmap maps

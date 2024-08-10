@@ -195,6 +195,16 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
     string
 }
 
+/// Translate a generic through page table and return a immutable reference
+pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
+    let page_table = PageTable::from_token(token);
+    let va = ptr as usize;
+    page_table
+        .translate_va(VirtAddr::from(va))
+        .unwrap()
+        .get_ref()
+}
+
 /// Translate a generic through page table and return a mutable reference
 pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
     let page_table = PageTable::from_token(token);
@@ -205,6 +215,8 @@ pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
         .get_mut()
 }
 
+/// User buffer is continuous in user space, but could be separate in kernel space.
+/// See [`crate::syscall::fs::sys_read`] and [`crate::syscall::fs::sys_write`] for more information.
 pub struct UserBuffer {
     pub buffers: Vec<&'static mut [u8]>,
 }

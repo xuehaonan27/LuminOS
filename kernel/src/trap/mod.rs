@@ -6,12 +6,18 @@ use riscv::register::{
     stvec::{self, TrapMode},
 };
 
-use crate::config::{TRAMPOLINE, TRAP_CONTEXT};
-use crate::syscall::syscall;
 use crate::task::{
     current_trap_cx, current_user_token, exit_current_and_run_next, suspend_current_and_run_next,
 };
 use crate::timer::set_next_trigger;
+use crate::{
+    config::{TRAMPOLINE, TRAP_CONTEXT},
+    task::{current_task, SignalFlags},
+};
+use crate::{
+    syscall::syscall,
+    task::{check_signals_error_of_current, handle_signals},
+};
 
 mod context;
 pub use context::TrapContext;
@@ -87,11 +93,13 @@ pub fn trap_handler() -> ! {
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
             kprintln!("[kernel] PageFault in application");
-            exit_current_and_run_next(-2);
+            // exit_current_and_run_next(-2);
+            current_add_signal(SignalFlags::SIGSEGV);
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             kprintln!("[kernel] IllegalInstruction in application");
-            exit_current_and_run_next(-3);
+            // exit_current_and_run_next(-3);
+            current_add_signal(SignalFlags::SIGSEGV);
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             set_next_trigger();
@@ -106,6 +114,16 @@ pub fn trap_handler() -> ! {
             );
         }
     }
+
+    // handle signals (handle the sent signal)
+    handle_signals();
+
+    // check error signals (if error then exit)
+    if let Some((errno, msg)) = check_signals_error_of_current() {
+        kprintln!("[kernel] {}", msg);
+        exit_current_and_run_next(errno);
+    }
+
     trap_return();
 }
 
@@ -113,4 +131,10 @@ pub fn trap_handler() -> ! {
 /// Should be called during kernel initialization.
 pub fn enable_timer_interrupt() {
     unsafe { sie::set_stimer() }
+}
+
+pub fn current_add_signal(signal: SignalFlags) {
+    let task = current_task().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.signals |= signal;
 }

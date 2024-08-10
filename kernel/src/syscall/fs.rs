@@ -1,12 +1,30 @@
+use alloc::sync::Arc;
+
 use crate::{
-    fs::{open_file, OpenFlags},
-    mm::{translated_byte_buffer, translated_str, UserBuffer},
+    fs::{open_file, pipe::make_pipe, OpenFlags},
+    mm::{translated_byte_buffer, translated_refmut, translated_str, UserBuffer},
     task::{current_task, current_user_token},
 };
 
 const __STDIN: usize = 0;
 const __STDOUT: usize = 1;
 const __STDERR: usize = 2;
+
+pub fn sys_dup(fd: usize) -> isize {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    if fd >= inner.fd_table.len() {
+        // fd not allocated yet
+        return -1;
+    }
+    if inner.fd_table[fd].is_none() {
+        // correspond file not found
+        return -1;
+    }
+    let new_fd = inner.alloc_fd();
+    inner.fd_table[new_fd] = Some(Arc::clone(inner.fd_table[fd].as_ref().unwrap()));
+    new_fd as isize
+}
 
 pub fn sys_open(path: *const u8, flags: u32) -> isize {
     let task = current_task().unwrap();
@@ -32,6 +50,22 @@ pub fn sys_close(fd: usize) -> isize {
         return -1;
     }
     inner.fd_table[fd].take(); // substract the strong counter in `Arc`
+    0
+}
+
+pub fn sys_pipe(pipe: *mut usize) -> isize {
+    let task = current_task().unwrap();
+    let token = current_user_token();
+    let mut inner = task.inner_exclusive_access();
+    let (pipe_read, pipe_write) = make_pipe();
+    let read_fd = inner.alloc_fd();
+    inner.fd_table[read_fd] = Some(pipe_read);
+    let write_fd = inner.alloc_fd();
+    inner.fd_table[write_fd] = Some(pipe_write);
+    // Translate pointer in user space to kernel space.
+    // Then write fd numbers into the array.
+    *translated_refmut(token, pipe) = read_fd;
+    *translated_refmut(token, unsafe { pipe.add(1) }) = write_fd;
     0
 }
 

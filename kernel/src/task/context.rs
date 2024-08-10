@@ -33,4 +33,9 @@ impl TaskContext {
             s: [0; 12],
         }
     }
+
+    /// Get `sp` of the trapframe
+    pub fn sp(&self) -> usize {
+        self.sp
+    }
 }

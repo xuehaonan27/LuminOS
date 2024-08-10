@@ -15,14 +15,15 @@ mod page_table;
 pub use address::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 pub use address::{StepByOne, VPNRange};
 pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker};
+#[allow(unused)]
+pub use heap_allocator::inspect_heap;
 pub use memory_set::{kernel_token, remap_test};
 pub use memory_set::{MapPermission, MemorySet, KERNEL_SPACE};
 pub use page_table::{
-    translated_byte_buffer, translated_refmut, translated_str, PageTableEntry, UserBuffer,
+    translated_byte_buffer, translated_ref, translated_refmut, translated_str, PageTableEntry,
+    UserBuffer,
 };
 pub use page_table::{PTEFlags, PageTable};
-#[allow(unused)]
-pub use heap_allocator::inspect_heap;
 
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {

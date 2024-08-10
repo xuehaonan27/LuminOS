@@ -1,12 +1,13 @@
 //!Implementation of [`TaskControlBlock`]
-use super::TaskContext;
 use super::{pid_alloc, KernelStack, PidHandle};
+use super::{SignalActions, SignalFlags, TaskContext};
 use crate::config::TRAP_CONTEXT;
 use crate::fs::File;
 use crate::fs::{Stderr, Stdin, Stdout};
-use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
+use crate::mm::{translated_refmut, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
+use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -35,6 +36,17 @@ pub struct TaskControlBlockInner {
     pub children: Vec<Arc<TaskControlBlock>>,
     pub exit_code: i32,
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+    pub signals: SignalFlags,
+    pub signal_mask: SignalFlags,
+    /// The signal which is being handling
+    pub handling_sig: isize,
+    /// Signal actions
+    pub signal_actions: SignalActions,
+    /// If the task is killed
+    pub killed: bool,
+    /// If the task if frozen by a signal
+    pub frozen: bool,
+    pub trap_ctx_backup: Option<TrapContext>,
 }
 
 impl TaskControlBlockInner {
@@ -125,6 +137,13 @@ impl TaskControlBlock {
                         // 2 -> stderr
                         Some(Arc::new(Stderr)),
                     ],
+                    signals: SignalFlags::empty(),
+                    signal_mask: SignalFlags::empty(),
+                    handling_sig: -1,
+                    signal_actions: SignalActions::default(),
+                    killed: false,
+                    frozen: false,
+                    trap_ctx_backup: None,
                 })
             },
         };
@@ -142,13 +161,39 @@ impl TaskControlBlock {
     pub fn change_program_brk(self: &Arc<Self>, size: i32) -> Option<usize> {
         self.inner_exclusive_access().change_program_brk(size)
     }
-    pub fn exec(&self, elf_data: &[u8]) {
+    pub fn exec(&self, elf_data: &[u8], args: Vec<String>) {
         // memory_set with elf program headers/trampoline/trap context/user stack
-        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        let (memory_set, mut user_sp, entry_point) = MemorySet::from_elf(elf_data);
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
+
+        // push arguments on user stack
+        user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
+        let argv_base = user_sp;
+        let mut argv: Vec<_> = (0..=args.len())
+            .map(|arg| {
+                translated_refmut(
+                    memory_set.token(),
+                    (argv_base + arg * core::mem::size_of::<usize>()) as *mut usize,
+                )
+            })
+            .collect();
+        *argv[args.len()] = 0;
+        for i in 0..args.len() {
+            user_sp -= args[i].len() + 1;
+            *argv[i] = user_sp;
+            let mut p = user_sp;
+            // FIXME: maybe slow here
+            for c in args[i].as_bytes() {
+                *translated_refmut(memory_set.token(), p as *mut u8) = *c;
+                p += 1;
+            }
+            *translated_refmut(memory_set.token(), p as *mut u8) = 0;
+        }
+        // make the user_sp aligned to 16 bytes
+        user_sp -= user_sp % 16;
 
         // **** access inner exclusively
         let mut inner = self.inner_exclusive_access();
@@ -159,14 +204,17 @@ impl TaskControlBlock {
         // initialize base_size
         inner.base_size = user_sp;
         // initialize trap_cx
-        let trap_cx = inner.get_trap_cx();
-        *trap_cx = TrapContext::init_context(
+        let mut trap_cx = TrapContext::init_context(
             entry_point,
             user_sp,
             KERNEL_SPACE.exclusive_access().token(),
             self.kernel_stack.get_top(),
             trap_handler as usize,
         );
+        // int main(int argc, char *argv[]);
+        trap_cx.x[10] = args.len();
+        trap_cx.x[11] = argv_base;
+        *inner.get_trap_cx() = trap_cx;
         // **** release inner automatically
     }
     pub fn fork(self: &Arc<Self>) -> Arc<Self> {
@@ -208,6 +256,14 @@ impl TaskControlBlock {
                     children: Vec::new(),
                     exit_code: 0,
                     fd_table: new_fd_table,
+                    signals: SignalFlags::empty(),
+                    // inherit the signal_mask and signal_action
+                    signal_mask: parent_inner.signal_mask,
+                    handling_sig: -1,
+                    signal_actions: parent_inner.signal_actions.clone(),
+                    killed: false,
+                    frozen: false,
+                    trap_ctx_backup: None,
                 })
             },
         });
@@ -227,8 +283,7 @@ impl TaskControlBlock {
     }
     pub fn inspect_kernel_stack(&self) {
         let guard = self.inner_exclusive_access();
-        let sp: usize;
-        unsafe { core::arch::asm!("mv {}, sp", out(reg) sp) };
+        let sp: usize = guard.task_cx.sp();
         let (bottom, top) = super::pid::kernel_stack_position(self.pid.0);
         kprintln!(
             r"Kernel stack of pid {}:

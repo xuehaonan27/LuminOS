@@ -10,7 +10,7 @@ use user_lib::{exec, fork, wait, yield_};
 fn main() -> i32 {
     if fork() == 0 {
         println!("I am child process!");
-        exec("user_shell\0");
+        exec("user_shell\0", &[core::ptr::null::<u8>()]);
     } else {
         println!("I am parent process!");
         loop {
